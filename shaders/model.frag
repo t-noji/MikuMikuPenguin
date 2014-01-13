@@ -4,6 +4,7 @@ uniform sampler2D textureSampler;
 uniform sampler2D sphereSampler;
 uniform sampler2D toonSampler;
 
+
 uniform vec3 ambient;
 uniform vec4 diffuse;
 uniform vec3 specular;
@@ -21,6 +22,10 @@ uniform float fSphereMode; //sphereMode stored as a float
 
 in vec2 UV;
 in vec3 normal;
+
+uniform bool drawShadow;
+uniform sampler2D shadowMap;
+in vec4 shadowCoord;
 
 out vec4 color;
 
@@ -41,11 +46,24 @@ vec4 getSphereColor()
 
 void main()
 {
+	//color=vec4(1.0,0.0,0.0,1.0);
+	//return;
+	
 	if(isEdge)
 	{
 		color=edgeColor;
 		return;
 	}
+	
+	float visibility=1.0f;
+	//if(drawShadow) visibility=textureProj(shadowMap, shadowCoord);
+	
+	/*if(drawShadow && texture(shadowMap, shadowCoord.xy ).z < shadowCoord.z)
+	{
+		visibility = 0.5;
+		//color = vec4(1.0, 0.5, 0.5, 0.5);
+		//return;
+	}*/
 	
 	int sphereMode=int(fSphereMode);
 	
@@ -87,7 +105,8 @@ void main()
         vec2 toonCoord = vec2(0.0, 0.5 * (1.0 - dotNL));
         vec3 toon = texture2D(toonSampler, toonCoord).rgb;
 		
-		vec3 colorRGB=min((textureColor*scatteredLight) + reflectedLight,vec3(1.0));
+		vec3 colorRGB=min((textureColor*visibility),vec3(1.0));
+		//vec3 colorRGB=min((textureColor*scatteredLight) + visibility*reflectedLight,vec3(1.0));
 		color=vec4(colorRGB,texture(textureSampler, UV).a);
 		
 		/*if(sphereMode==1)

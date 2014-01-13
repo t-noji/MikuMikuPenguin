@@ -21,6 +21,8 @@
 
 #include "glfw_func_callbacks.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -57,10 +59,12 @@ Viewer::Viewer(string modelPath, string motionPath,string musicPath)
 	if(!test.is_open())
 	{
 		shaderProgram=loadShaders(DATA_PATH"/shaders/model.vert",DATA_PATH"/shaders/model.frag");
+		shadowShaderProgram=loadShaders(DATA_PATH"/shaders/shadowmap.vert",DATA_PATH"/shaders/shadowmap.frag");
 	}
 	else
 	{
 		shaderProgram=loadShaders("shaders/model.vert","shaders/model.frag");
+		shadowShaderProgram=loadShaders("shaders/shadowmap.vert","shaders/shadowmap.frag");
 	}
 	test.close();
 	
@@ -138,18 +142,22 @@ void Viewer::handleLogic()
 		mmdPhysics->updateBones(doPhysics);
 		
 		glUseProgram(bulletPhysics->debugDrawer->shaderProgram);
-		setCamera(bulletPhysics->debugDrawer->MVPLoc);
+		setCameraMVP(bulletPhysics->debugDrawer->MVPLoc);
 		glUseProgram(shaderProgram);
-		setCamera(MVP_loc);
+		setCameraMVP(MVP_loc);
 	}
 }
 
 void Viewer::render()
-{
+{	
+	bool drawShadow=false;
+	if(glfwGetKey('Z')==GLFW_PRESS) drawShadow=true;
+	
 	if(glfwGetKey('A')==GLFW_RELEASE)
 	{
-		drawModel(true); //draw model edges
-		drawModel(false); //draw model
+		drawShadowMap();
+		drawModel(true,false); //draw model edges
+		drawModel(false,true); //draw model
 	}
 	
 	if(glfwGetKey('S')==GLFW_PRESS)
@@ -199,12 +207,30 @@ void Viewer::run()
 	}
 }
 
-void Viewer::setCamera(GLuint MVPLoc)
+glm::mat4 Viewer::getCameraMVP()
 {
 	glm::mat4 Projection = glm::perspective(45.0f, 16.0f/9.0f, 0.1f, 100.0f);
 	// Camera matrix
 	glm::mat4 View       = glm::lookAt(
-		glm::vec3(cameraPosition.x,cameraPosition.y,-cameraPosition.z), // Camera is at (4,3,3), in World Space
+		glm::vec3(cameraPosition.x,cameraPosition.y,-cameraPosition.z), // Camera is at (cp.x,cp.y,cp.z), in World Space
+		cameraTarget, // and looks at the origin
+		glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
+	);
+	//View= glm::rotate(0.0f,0.0f,0.0f,1.0f)* View;
+	// Model matrix : an identity matrix (model will be at the origin)
+	glm::mat4 Model = glm::translate(modelTranslate.x, modelTranslate.y, modelTranslate.z);
+	// Our ModelViewProjection : multiplication of our 3 matrices
+	glm::mat4 MVP = Projection * View * Model;
+	
+	return MVP;
+}
+
+void Viewer::setCameraMVP(GLuint MVPLoc)
+{
+	glm::mat4 Projection = glm::perspective(45.0f, 16.0f/9.0f, 0.1f, 100.0f);
+	// Camera matrix
+	glm::mat4 View       = glm::lookAt(
+		glm::vec3(cameraPosition.x,cameraPosition.y,-cameraPosition.z), // Camera is at (cp.x,cp.y,cp.z), in World Space
 		cameraTarget, // and looks at the origin
 		glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
 	);
@@ -215,9 +241,154 @@ void Viewer::setCamera(GLuint MVPLoc)
 	glm::mat4 MVP = Projection * View * Model;
 	
 	glUniformMatrix4fv(MVPLoc, 1, GL_FALSE, &MVP[0][0]);
+	
+	
 }
 
-void Viewer::drawModel(bool drawEdges)
+void Viewer::drawShadowMap()
+{
+	glUseProgram(shadowShaderProgram);
+	
+	glBindVertexArray(VAOs[Vertices]);
+	glBindBuffer(GL_ARRAY_BUFFER, Buffers[VertexArrayBuffer]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, Buffers[VertexIndexBuffer]);
+	
+	glEnable(GL_BLEND);
+	glCullFace(GL_BACK);
+	glUniform1i(uniformVars[uIsEdge], 0);
+	
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LEQUAL);
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_DST_ALPHA);
+	
+	glm::vec3 halfVector=glm::normalize(cameraPosition-cameraTarget);
+	halfVector.z=-halfVector.z;
+	GLuint halfVectorLoc=glGetUniformLocation(shaderProgram, "halfVector");
+	
+	//Temporary lightDirection constant for distant light source (ex: sun/moonlight)
+	glm::vec3 lightDirection=glm::normalize(glm::vec3(0.3,1.0,2.0));
+	GLuint lightDirectionLoc=glGetUniformLocation(shaderProgram, "lightDirection");
+	
+	glUniform3f(uniformVars[uHalfVector],halfVector.x,halfVector.y,halfVector.z);
+	glUniform3f(uniformVars[uLightDirection],lightDirection.x,lightDirection.y,lightDirection.z);
+	
+
+	
+	glm::vec3 lightInvDir=-glm::normalize(glm::vec3(0.3,1.0,2.0));
+	
+	glm::mat4 depthProjectionMatrix=glm::ortho<float>(-10,10,-10,10,-10,20);
+	glm::mat4 depthViewMatrix=glm::lookAt(lightInvDir, glm::vec3(0,0,0), glm::vec3(0,1,0));
+	glm::mat4 depthModelMatrix = glm::mat4(1.0);
+	glm::mat4 depthMVP = depthProjectionMatrix * depthViewMatrix * depthModelMatrix;
+	
+	//glm::mat4 sceneModelMatrix=glm::rotate(t*720.0f,glm::vec3(0,1,0));
+	//glm::vec3 lightPosition=glm::vec3(sinf(t*6.0f*M_PI)*300.f,200.f,cosf(t*4.0f*M_PI)*100.f*250.f);
+	//glm::mat4 lightViewMatrix= glm::lookAt(lightPosition, glm::vec3(0.f), glm::vec3(0,1,0));
+	//glm::mat4 lightProjectionMatrix=glm::frustum(-1.0f,1.0f,-1.0f,1.0f,1.0f,FRUSTUM_DEPTH);
+	
+	glm::mat4 lightMVP=depthMVP;
+	
+	//Set the MVP to the light's point of view.
+	glUniformMatrix4fv(MVP_loc, 1, GL_FALSE, &lightMVP[0][0]);
+	
+	//Bind the 'depth only' FBO and set the viewport to the size of the depth texture
+	//glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
+	//glViewport(0,0,DEPTH_TEXTURE_SIZE,DEPTH_TEXTURE_SIZE);
+	
+	glClearDepth(1.f);
+	glClear(GL_DEPTH_BUFFER_BIT);
+	glDrawBuffer(GL_NONE);
+	
+	//Enable polygon offset to resolve depth-fighting issues
+	glEnable(GL_POLYGON_OFFSET_FILL);
+	glPolygonOffset(2.f,4.f);
+	
+	//draw from the light's point of view
+	drawScene(false);
+	
+	//convert homogeneous coordinates in the range [-1,1]) to the range [0,1]
+	//For example, a coordinate in the middle of the screen (0,0) would need to translate to (0.5,0.5)
+	//This matrix divides coordinates by 2 (the diagonal), then translates them +0.5 (the bottom row)
+	//[-1,1] -> divide by 2 -> [-0.5,0.5] -> translate -> [0,1]
+	glm::mat4 biasMatrix(
+		0.5, 0.0, 0.0, 0.0,
+		0.0, 0.5, 0.0, 0.0,
+		0.0, 0.0, 0.5, 0.0,
+		0.5, 0.5, 0.5, 1.0
+	);
+	glm::mat4 depthBiasMVP = biasMatrix*depthMVP;
+	glUniformMatrix4fv(uniformVars[uDepthBiasMVP], 1, GL_FALSE, &depthBiasMVP[0][0]);
+	
+	
+	
+	glDisable(GL_POLYGON_OFFSET_FILL);
+	//Set FBO binding back to the back-frame-buffer (as in back/front double framebuffer) (other parts of Viewer will be configuring this FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	//set MVP back to normal (from camera) scene MVP
+	glUseProgram(shaderProgram);
+	setCameraMVP(MVP_loc);
+	glDrawBuffer(GL_BACK);
+}
+
+void Viewer::drawScene(bool drawShadow)
+{
+	int faceCount=0;
+	for(int m=0; m<pmxInfo->material_continuing_datasets; ++m) //pmxInfo->material_continuing_datasets
+	{
+		
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D,textures[pmxInfo->materials[m]->textureIndex]);
+		//glUniform1iARB(uniformVars[uTextureSampler], 0);
+		
+		if((int)pmxInfo->materials[m]->sphereMode>0)
+		{
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D,textures[pmxInfo->materials[m]->sphereIndex]);
+		}
+		
+		if((int)pmxInfo->materials[m]->shareToon==0)
+		{
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D,textures[pmxInfo->materials[m]->toonTextureIndex]);
+		}
+		else if((int)pmxInfo->materials[m]->shareToon==1)
+		{
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D,textures[textures.size()-11+pmxInfo->materials[m]->shareToonTexture]);
+		}
+		
+		//if((int)pmxInfo->materials[m]->drawShadow==1)
+		if(drawShadow)
+		{
+			glActiveTexture(GL_TEXTURE3);
+			glEnable(GL_TEXTURE_2D);
+			
+			glBindTexture(GL_TEXTURE_2D,depthTexture);
+		}
+		
+		glUniform3fv(uniformVars[uAmbient],1,(GLfloat*)&pmxInfo->materials[m]->ambient);
+		glUniform4fv(uniformVars[uDiffuse],1,(GLfloat*)&pmxInfo->materials[m]->diffuse);
+		glUniform3fv(uniformVars[uSpecular],1,(GLfloat*)&pmxInfo->materials[m]->specular);
+		
+		glUniform1f(uniformVars[uShininess],glm::normalize(pmxInfo->materials[m]->shininess));
+		
+		glUniform4fv(uniformVars[uEdgeColor],1,(GLfloat*)&pmxInfo->materials[m]->edgeColor);
+		glUniform1f(uniformVars[uEdgeSize],glm::normalize(pmxInfo->materials[m]->edgeSize));
+		
+		glUniform1f(uniformVars[uSphereMode],glm::normalize(pmxInfo->materials[m]->sphereMode));
+        
+		glDrawElements(GL_TRIANGLES, (pmxInfo->materials[m]->hasFaceNum), GL_UNSIGNED_INT, BUFFER_OFFSET(sizeof(GLuint)*faceCount));
+		faceCount+=pmxInfo->materials[m]->hasFaceNum;
+	}
+	
+	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	
+	drawGround();
+}
+
+void Viewer::drawModel(bool drawEdges, bool drawShadow)
 {
 	//Bind VAO and related Buffers
 	glBindVertexArray(VAOs[Vertices]);
@@ -243,64 +414,44 @@ void Viewer::drawModel(bool drawEdges)
 		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_DST_ALPHA);
 	}
 	
+	if(drawShadow)
+	{
+		glUniform1i(uniformVars[uDrawShadow], 1);
+	}
+	else
+	{
+		glUniform1i(uniformVars[uDrawShadow], 0);
+	}
 	
 	glm::vec3 halfVector=glm::normalize(cameraPosition-cameraTarget);
 	halfVector.z=-halfVector.z;
 	GLuint halfVectorLoc=glGetUniformLocation(shaderProgram, "halfVector");
 	
+	//Temporary lightDirection constant for distant light source (ex: sun/moonlight)
 	glm::vec3 lightDirection=glm::normalize(glm::vec3(0.3,1.0,2.0));
 	GLuint lightDirectionLoc=glGetUniformLocation(shaderProgram, "lightDirection");
 	
-	int faceCount=0;
-	for(int m=0; m<pmxInfo->material_continuing_datasets; ++m) //pmxInfo->material_continuing_datasets
-	{
-		
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D,textures[pmxInfo->materials[m]->textureIndex]);
-		glUniform1iARB(uniformVars[uTextureSampler], 0);
-		
-		if((int)pmxInfo->materials[m]->sphereMode>0)
-		{
-			glActiveTexture(GL_TEXTURE1);
-			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D,textures[pmxInfo->materials[m]->sphereIndex]);
-			glUniform1iARB(uniformVars[uSphereSampler], 1);
-		}
-		
-		if((int)pmxInfo->materials[m]->shareToon==0)
-		{
-			glActiveTexture(GL_TEXTURE2);
-			glEnable(GL_TEXTURE_2D);
-			
-			glBindTexture(GL_TEXTURE_2D,textures[pmxInfo->materials[m]->toonTextureIndex]);
-			glUniform1iARB(uniformVars[uToonSampler], 2);
-		}
-		else if((int)pmxInfo->materials[m]->shareToon==1)
-		{
-			glActiveTexture(GL_TEXTURE2);
-			glEnable(GL_TEXTURE_2D);
-			
-			glBindTexture(GL_TEXTURE_2D,textures[textures.size()-11+pmxInfo->materials[m]->shareToonTexture]);
-			glUniform1iARB(uniformVars[uToonSampler], 2);
-		}
-		
-		
-		glUniform3fv(uniformVars[uAmbient],1,(GLfloat*)&pmxInfo->materials[m]->ambient);
-		glUniform4fv(uniformVars[uDiffuse],1,(GLfloat*)&pmxInfo->materials[m]->diffuse);
-		glUniform3fv(uniformVars[uSpecular],1,(GLfloat*)&pmxInfo->materials[m]->specular);
-		
-		glUniform1f(uniformVars[uShininess],glm::normalize(pmxInfo->materials[m]->shininess));
-		glUniform3f(uniformVars[uHalfVector],halfVector.x,halfVector.y,halfVector.z);
-		glUniform3f(uniformVars[uLightDirection],lightDirection.x,lightDirection.y,lightDirection.z);
-		
-		glUniform4fv(uniformVars[uEdgeColor],1,(GLfloat*)&pmxInfo->materials[m]->edgeColor);
-		glUniform1f(uniformVars[uEdgeSize],glm::normalize(pmxInfo->materials[m]->edgeSize));
-		
-		glUniform1f(uniformVars[uSphereMode],glm::normalize(pmxInfo->materials[m]->sphereMode));
-        
-		glDrawElements(GL_TRIANGLES, (pmxInfo->materials[m]->hasFaceNum), GL_UNSIGNED_INT, BUFFER_OFFSET(sizeof(GLuint)*faceCount));
-		faceCount+=pmxInfo->materials[m]->hasFaceNum;
-	}
+	glUniform3f(uniformVars[uHalfVector],halfVector.x,halfVector.y,halfVector.z);
+	glUniform3f(uniformVars[uLightDirection],lightDirection.x,lightDirection.y,lightDirection.z);
+	
+	drawScene(drawShadow);
+	
+	
+	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
+
+void Viewer::drawGround()
+{
+	glBindVertexArray(VAOs[groundVAO]);
+	glBindBuffer(GL_ARRAY_BUFFER, Buffers[groundBuffer]);
+	
+	glBindVertexArray(groundVAO);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+    
+    //release binding
+    glBindVertexArray(0);
 }
 
 void Viewer::drawIKMarkers()
@@ -468,6 +619,75 @@ void Viewer::initBuffers()
 	
 	glVertexAttribPointer(vWeightFormula, 1, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*9));
 	glEnableVertexAttribArray(vWeightFormula);
+	
+	
+	//Initialize depth buffer/texture (used for shadow mapping)	
+	glGenTextures(1,&depthTexture);
+	glBindTexture(GL_TEXTURE_2D,depthTexture);
+	
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32,
+				DEPTH_TEXTURE_SIZE, DEPTH_TEXTURE_SIZE,
+				0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	
+	//Set up default filtering modes
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	
+	//Set up depth comparison mode
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	
+	//Set up wrapping modes
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	
+	//release texture binding
+	glBindTexture(GL_TEXTURE_2D,0);
+	
+	//Create FBO to render depth into
+	glGenFramebuffers(1,&depthFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
+	
+	//Attach depth texture to FBO
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture, 0);
+	
+	//disable color rendering for the depth buffer (since there's no color attachments)
+	glDrawBuffer(GL_NONE);
+	
+	//Set FBO binding back to the back-frame-buffer (as in back/front double framebuffer) (other parts of Viewer will be configuring this FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	
+	
+	
+	//Upload geometry for the ground plane
+    static const float groundVertices[] =
+    {
+        -500.0f, -50.0f, -500.0f, 1.0f,
+        -500.0f, -50.0f,  500.0f, 1.0f,
+         500.0f, -50.0f,  500.0f, 1.0f,
+         500.0f, -50.0f, -500.0f, 1.0f,
+    };
+    static const float groundNormals[] =
+    {
+        0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f
+    };
+
+	//glGenVertexArrays(1, &VAOs[groundVAO]);
+	//glGenBuffers(1, &Buffers[groundBuffer]);
+	glBindVertexArray(VAOs[groundVAO]);
+	glBindBuffer(GL_ARRAY_BUFFER, Buffers[groundBuffer]);
+	
+	glBufferData(GL_ARRAY_BUFFER, sizeof(groundVertices) + sizeof(groundNormals), NULL, GL_STATIC_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(groundVertices), groundVertices);
+	glBufferSubData(GL_ARRAY_BUFFER, sizeof(groundVertices), sizeof(groundNormals), groundNormals);
+
+	glVertexAttribPointer(vPosition, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+	glEnableVertexAttribArray(vPosition);
+	glVertexAttribPointer(vNormal, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)sizeof(groundVertices));
+	glEnableVertexAttribArray(vNormal);
 }
 
 void Viewer::loadTextures()

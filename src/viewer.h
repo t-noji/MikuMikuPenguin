@@ -5,7 +5,7 @@
 #define GLFW_INCLUDE_GLU
 #include <GL/glfw.h>
 
-#include <glm/gtc/matrix_transform.hpp> 
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -15,8 +15,8 @@
 
 #define BUFFER_OFFSET(offset) ((void *) (offset))
 
-enum VAO_IDs { Vertices, IKDebugVertices, RigidDebugVertices, NumVAOs };
-enum Buffer_IDs { VertexArrayBuffer, VertexIndexBuffer, IKVertexArrayBuffer, RecordBuffer, NumBuffers };
+enum VAO_IDs { Vertices, IKDebugVertices, RigidDebugVertices, groundVAO, NumVAOs };
+enum Buffer_IDs { VertexArrayBuffer, VertexIndexBuffer, IKVertexArrayBuffer, RecordBuffer, depthBuffer, groundBuffer, NumBuffers };
 enum Attrib_IDs { vPosition, vUV, vNormal, vBoneIndices, vBoneWeights, vWeightFormula };
 enum Uniform_IDs { 
 	uAmbient,uDiffuse,uSpecular,uShininess,
@@ -24,6 +24,7 @@ enum Uniform_IDs {
 	uHalfVector,uLightDirection,
 	uSphereMode,
 	uTextureSampler,uSphereSampler,uToonSampler,
+	uDrawShadow,uDepthBiasMVP,uShadowMap,
 	NumUniforms };
 
 struct PMXInfo;
@@ -53,10 +54,14 @@ class Viewer
 	void handleLogic();
 	void render();
 	
-	void setCamera(GLuint MVPLoc);
+	void setCameraMVP(GLuint MVPLoc);
+	glm::mat4 getCameraMVP();
 	void holdModelInBindPose();
 	
-	void drawModel(bool drawEdges);
+	void drawScene(bool drawShadow);
+	void drawModel(bool drawEdges, bool drawShadow);
+	void drawShadowMap();
+	void drawGround();
 	void drawIKMarkers();
 	
 	
@@ -75,6 +80,13 @@ class Viewer
 
 	std::vector<GLuint> textures;
 	
+	//used for shadow mapping
+	static const int DEPTH_TEXTURE_SIZE=1920*1080; //No clue what proper sizing should be, using screen dimensions for now
+	float FRUSTUM_DEPTH=20.0f;
+	GLuint depthTexture;
+	GLuint depthFBO; //depth framebuffer-object
+	GLuint shadowShaderProgram; //shadow mapping shader program
+	
 	GLuint shaderProgram;
 	
 	VertexData *IKVertexData;
@@ -87,6 +99,5 @@ class Viewer
 	
 	glm::vec3 modelTranslate;
 };
-
 
 #endif

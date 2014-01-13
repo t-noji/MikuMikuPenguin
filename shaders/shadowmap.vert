@@ -11,12 +11,9 @@ layout(location = 5) in float vWeightFormula;
 
 out vec2 UV;
 out vec3 normal;
-out vec4 shadowCoord;
 
-uniform mat4 depthBiasMVP;
 uniform mat4 MVP;
 uniform mat4 Bones[254];
-
 uniform bool isEdge;
 uniform float edgeSize;
 
