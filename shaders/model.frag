@@ -49,6 +49,16 @@ void main()
 	//color=vec4(1.0,0.0,0.0,1.0);
 	//return;
 	
+	//if(shadowCoord.x==0 && shadowCoord.y==0 && shadowCoord.z==0)
+	float testX=texture(shadowMap, shadowCoord.xy ).x;
+	float testY=texture(shadowMap, shadowCoord.xy ).y;
+	float testZ=texture(shadowMap, shadowCoord.xy ).z;
+	/*if(testX == 0 && testY==0 && testZ==0)
+	{
+		color=vec4(1.0,0,0,1);
+		return;
+	}*/
+	
 	if(isEdge)
 	{
 		color=edgeColor;
@@ -58,12 +68,12 @@ void main()
 	float visibility=1.0f;
 	//if(drawShadow) visibility=textureProj(shadowMap, shadowCoord);
 	
-	/*if(drawShadow && texture(shadowMap, shadowCoord.xy ).z < shadowCoord.z)
+	if(drawShadow && texture(shadowMap, shadowCoord.xy ).z < shadowCoord.z)
 	{
 		visibility = 0.5;
 		//color = vec4(1.0, 0.5, 0.5, 0.5);
 		//return;
-	}*/
+	}
 	
 	int sphereMode=int(fSphereMode);
 	

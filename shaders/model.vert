@@ -15,7 +15,7 @@ out vec4 shadowCoord;
 
 uniform mat4 depthBiasMVP;
 uniform mat4 MVP;
-uniform mat4 Bones[254];
+uniform mat4 Bones[230];
 
 uniform bool isEdge;
 uniform float edgeSize;
@@ -106,4 +106,7 @@ void main()
 	gl_Position = MVP * newVertex;
 	UV 		    = vUV;
 	normal      = normalize(newNormal.xyz);
+	
+	shadowCoord =  depthBiasMVP * newVertex;
+	//shadowCoord = depthBiasMVP * newVertex;
 }

@@ -155,9 +155,9 @@ void Viewer::render()
 	
 	if(glfwGetKey('A')==GLFW_RELEASE)
 	{
-		drawShadowMap();
-		drawModel(true,false); //draw model edges
-		drawModel(false,true); //draw model
+		if(drawShadow) drawShadowMap();
+		//drawModel(true,false); //draw model edges
+		drawModel(false,drawShadow); //draw model
 	}
 	
 	if(glfwGetKey('S')==GLFW_PRESS)
@@ -247,7 +247,14 @@ void Viewer::setCameraMVP(GLuint MVPLoc)
 
 void Viewer::drawShadowMap()
 {
+	//CREATE SHADOW MAP
 	glUseProgram(shadowShaderProgram);
+	
+	motionController->updateBoneMatrix();
+	
+	//get uniform locations for shadowmap shader program
+	GLuint isEdgeLoc=glGetUniformLocation(shadowShaderProgram, "isEdge");
+	GLuint depthMVPLoc=glGetUniformLocation(shadowShaderProgram, "MVP");
 	
 	glBindVertexArray(VAOs[Vertices]);
 	glBindBuffer(GL_ARRAY_BUFFER, Buffers[VertexArrayBuffer]);
@@ -255,22 +262,11 @@ void Viewer::drawShadowMap()
 	
 	glEnable(GL_BLEND);
 	glCullFace(GL_BACK);
-	glUniform1i(uniformVars[uIsEdge], 0);
+	glUniform1i(isEdgeLoc, 0);
 	
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_DST_ALPHA);
-	
-	glm::vec3 halfVector=glm::normalize(cameraPosition-cameraTarget);
-	halfVector.z=-halfVector.z;
-	GLuint halfVectorLoc=glGetUniformLocation(shaderProgram, "halfVector");
-	
-	//Temporary lightDirection constant for distant light source (ex: sun/moonlight)
-	glm::vec3 lightDirection=glm::normalize(glm::vec3(0.3,1.0,2.0));
-	GLuint lightDirectionLoc=glGetUniformLocation(shaderProgram, "lightDirection");
-	
-	glUniform3f(uniformVars[uHalfVector],halfVector.x,halfVector.y,halfVector.z);
-	glUniform3f(uniformVars[uLightDirection],lightDirection.x,lightDirection.y,lightDirection.z);
 	
 
 	
@@ -286,13 +282,14 @@ void Viewer::drawShadowMap()
 	//glm::mat4 lightViewMatrix= glm::lookAt(lightPosition, glm::vec3(0.f), glm::vec3(0,1,0));
 	//glm::mat4 lightProjectionMatrix=glm::frustum(-1.0f,1.0f,-1.0f,1.0f,1.0f,FRUSTUM_DEPTH);
 	
+	//glm::mat4 lightMVP=lightProjectionMatrix*lightViewMatrix*sceneModelMatrix;
 	glm::mat4 lightMVP=depthMVP;
 	
 	//Set the MVP to the light's point of view.
-	glUniformMatrix4fv(MVP_loc, 1, GL_FALSE, &lightMVP[0][0]);
+	glUniformMatrix4fv(depthMVPLoc, 1, GL_FALSE, &lightMVP[0][0]);
 	
 	//Bind the 'depth only' FBO and set the viewport to the size of the depth texture
-	//glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
 	//glViewport(0,0,DEPTH_TEXTURE_SIZE,DEPTH_TEXTURE_SIZE);
 	
 	glClearDepth(1.f);
@@ -306,6 +303,33 @@ void Viewer::drawShadowMap()
 	//draw from the light's point of view
 	drawScene(false);
 	
+	glDisable(GL_POLYGON_OFFSET_FILL);
+	//Set FBO binding back to the back-frame-buffer (as in back/front double framebuffer) (other parts of Viewer will be configuring this FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	//set MVP back to normal (from camera) scene MVP
+	glUseProgram(shaderProgram);
+	setCameraMVP(MVP_loc);
+	glDrawBuffer(GL_BACK);
+	
+	/*GLint m_viewport[4];
+	glGetIntegerv( GL_VIEWPORT, m_viewport );
+	GLint width  = m_viewport[2];
+	GLint height =  m_viewport[3];
+	
+	glActiveTexture(GL_TEXTURE3);
+	glBindTexture(GL_TEXTURE_2D, depthTexture);
+	
+	glCopyTexImage2D(GL_TEXTURE_2D,0,GL_DEPTH_COMPONENT,m_viewport[0], 
+            m_viewport[1], m_viewport[2], m_viewport[3],0);
+        
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	BYTE *raw_img = (unsigned char*) malloc(sizeof(unsigned char) * *width * *height * 3);
+	glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, raw_depth);*/
+	
+	
+	
+	//USE SHADOW MAP TO DRAW SHADOWS
+	
 	//convert homogeneous coordinates in the range [-1,1]) to the range [0,1]
 	//For example, a coordinate in the middle of the screen (0,0) would need to translate to (0.5,0.5)
 	//This matrix divides coordinates by 2 (the diagonal), then translates them +0.5 (the bottom row)
@@ -317,17 +341,7 @@ void Viewer::drawShadowMap()
 		0.5, 0.5, 0.5, 1.0
 	);
 	glm::mat4 depthBiasMVP = biasMatrix*depthMVP;
-	glUniformMatrix4fv(uniformVars[uDepthBiasMVP], 1, GL_FALSE, &depthBiasMVP[0][0]);
-	
-	
-	
-	glDisable(GL_POLYGON_OFFSET_FILL);
-	//Set FBO binding back to the back-frame-buffer (as in back/front double framebuffer) (other parts of Viewer will be configuring this FBO
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	//set MVP back to normal (from camera) scene MVP
-	glUseProgram(shaderProgram);
-	setCameraMVP(MVP_loc);
-	glDrawBuffer(GL_BACK);
+	glUniformMatrix4fv(uniformVars[uDepthBiasMVP], 1, GL_FALSE, &depthBiasMVP[0][0]);	
 }
 
 void Viewer::drawScene(bool drawShadow)
@@ -361,8 +375,6 @@ void Viewer::drawScene(bool drawShadow)
 		if(drawShadow)
 		{
 			glActiveTexture(GL_TEXTURE3);
-			glEnable(GL_TEXTURE_2D);
-			
 			glBindTexture(GL_TEXTURE_2D,depthTexture);
 		}
 		
@@ -592,7 +604,7 @@ void Viewer::initBuffers()
 	glEnableVertexAttribArray(vBoneWeights);
 	
 	glVertexAttribPointer(vWeightFormula, 1, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*9));
-	glEnableVertexAttribArray(vWeightFormula);	
+	glEnableVertexAttribArray(vWeightFormula);
 	
 	
 	//Initialize IK Debug buffers
@@ -627,15 +639,15 @@ void Viewer::initBuffers()
 	
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32,
 				DEPTH_TEXTURE_SIZE, DEPTH_TEXTURE_SIZE,
-				0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+				0, GL_DEPTH, GL_FLOAT, NULL);
 	
 	//Set up default filtering modes
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	
 	//Set up depth comparison mode
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 	
 	//Set up wrapping modes
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -649,7 +661,7 @@ void Viewer::initBuffers()
 	glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
 	
 	//Attach depth texture to FBO
-	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture, 0);
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthTexture, 0);
 	
 	//disable color rendering for the depth buffer (since there's no color attachments)
 	glDrawBuffer(GL_NONE);
@@ -968,6 +980,10 @@ void Viewer::initUniformVarLocations()
 	uniformVars[uTextureSampler]=glGetUniformLocationARB(shaderProgram,"textureSampler");
 	uniformVars[uSphereSampler]=glGetUniformLocationARB(shaderProgram,"sphereSampler");
 	uniformVars[uToonSampler]=glGetUniformLocationARB(shaderProgram,"toonSampler");
+	
+	uniformVars[uDrawShadow]=glGetUniformLocationARB(shaderProgram,"drawShadow");
+	uniformVars[uDepthBiasMVP]=glGetUniformLocationARB(shaderProgram,"depthBiasMVP");
+	uniformVars[uShadowMap]=glGetUniformLocationARB(shaderProgram,"shadowMap");	
 }
 
 Viewer::~Viewer()
