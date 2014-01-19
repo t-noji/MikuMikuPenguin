@@ -1,7 +1,7 @@
 lib_LTLIBRARIES = libmmp.la
 
 libmmp_la_SOURCES = \
-pmx.cpp vmd.cpp \
+pmx.cpp vmd.cpp protobuf/vme.pb.cc \
 motioncontroller.cpp interpolation.cpp \
 bulletphysics.cpp bulletdebugdrawer.cpp mmdphysics.cpp \
 texthandle.cpp shader.cpp glfw_func_callbacks.cpp
