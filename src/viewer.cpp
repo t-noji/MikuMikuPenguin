@@ -703,8 +703,8 @@ void Viewer::initGLFW()
 	if (!glfwInit()) exit(EXIT_FAILURE);
 	
 	glfwOpenWindowHint(GLFW_FSAA_SAMPLES, 2); //2x antialiasing
-	glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 3); //OpenGL version
-	//glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 2);
+	glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 2); //OpenGL version
+	glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 1);
 	//glfwOpenWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_FALSE);
 	//glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //Don't want old OpenGL
 	
