@@ -136,7 +136,7 @@ VMDMotionController::VMDMotionController(PMXInfo &pmxInfovar,VMDInfo &vmdInfovar
 		ite_morphKeyFrames.push_back(morphKeyFrames[i].begin());
 		
 		vMorphWeights.push_back(0);
-	}	
+	}
 }
 VMDMotionController::~VMDMotionController()
 {
