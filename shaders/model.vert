@@ -1,4 +1,4 @@
-#version 330 core
+#version 410 core
 
 //Vertex Properties
 layout(location = 0) in vec4 vPosition;
