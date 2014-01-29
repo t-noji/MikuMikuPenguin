@@ -19,10 +19,8 @@ uniform float edgeSize;
 uniform float fSphereMode; //sphereMode stored as a float
 
 
-in vec2 UV;
-in vec3 normal;
-
-varying out vec4 color;
+varying vec2 UV;
+varying vec3 normal;
 
 vec4 getSphereColor()
 {
@@ -43,7 +41,7 @@ void main()
 {
 	if(isEdge)
 	{
-		color=edgeColor;
+		gl_FragColor=edgeColor;
 		return;
 	}
 	
@@ -88,7 +86,7 @@ void main()
         vec3 toon = texture2D(toonSampler, toonCoord).rgb;
 		
 		vec3 colorRGB=min((textureColor*scatteredLight) + reflectedLight,vec3(1.0));
-		color=vec4(colorRGB,texture2D(textureSampler, UV).a);
+		gl_FragColor=vec4(colorRGB,texture2D(textureSampler, UV).a);
 		
 		/*if(sphereMode==1)
 		{
@@ -112,15 +110,15 @@ void main()
 	{
 		if(normal.x==1)
 		{
-			color = vec4(0.0, 1.0, 0.0, 1.0);
+			gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
 		}
 		else if(normal.y==1)
 		{
-			color = vec4(0.0, 0.4, 1.0, 1.0);
+			gl_FragColor = vec4(0.0, 0.4, 1.0, 1.0);
 		}
 		else
 		{
-			color = vec4(1.0, 0.5, 0.5, 0.5);
+			gl_FragColor = vec4(1.0, 0.5, 0.5, 0.5);
 		}
 		//vec2 pos={0.1,0.1};
 		
