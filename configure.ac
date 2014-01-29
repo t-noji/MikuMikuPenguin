@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.64])
-AC_INIT([MikuMikuPenguin], [0.1], [ibenrunnin@gmail.com])
-AM_INIT_AUTOMAKE
+AC_INIT([MikuMikuPenguin], [0.2], [ibenrunnin@gmail.com])
+AM_INIT_AUTOMAKE([foreign])
 LT_PREREQ([2.2])
 LT_INIT([dlopen])
 AC_CONFIG_MACRO_DIR([m4])
@@ -26,7 +26,7 @@ PLATFORM_STRING="Linux"
 AC_MSG_WARN([Hello])
 AC_DEFINE(PLATFORM_APPLE, 1, [Platform is Apple])
 bullet_CXXFLAGS="-stdlib=libc++ -I/usr/local/include/bullet"
-opengl_LIBS="-framework AGL -framework OpenGL"
+opengl_LIBS="-framework AGL -framework OpenGL -lglfw -lglew"
 PLATFORM_STRING="Apple"
 #AC_SUBST(CXXFLAGS, "-stdlib=libc++ -I/usr/local/include/bullet")
 #AC_SUBST(LDFLAGS, "-L/System/Library/Frameworks/OpenGL.framework/Libraries")
@@ -60,9 +60,10 @@ AC_PROG_CC
 AC_LANG([C++])
 
 # Checks for libraries.
+AS_IF([test "$PLATFORM_STRING" != "Apple"],
 AC_CHECK_LIB(GL, glBegin,
 			[AC_DEFINE(HAVE_GL)],
-			[AC_MSG_ERROR(You must have libgl installed)])
+ 			[AC_MSG_ERROR(You must have libgl installed)]))
 
 AC_CHECK_LIB(glfw, glfwInit,
 	[AC_DEFINE(HAVE_LIBGLFW)],

@@ -28,6 +28,7 @@
 //#define MODELDUMP true
 
 using namespace std;
+using namespace ClosedMMDFormat;
 
 
 Viewer::Viewer(string modelPath, string motionPath,string musicPath)
@@ -56,25 +57,28 @@ Viewer::Viewer(string modelPath, string motionPath,string musicPath)
 	ifstream test("shaders/model.vert");
 	if(!test.is_open())
 	{
-		shaderProgram=loadShaders(DATA_PATH"/shaders/model.vert",DATA_PATH"/shaders/model.frag");
+		shaderProgram=compileShaders(DATA_PATH"/shaders/model.vert",DATA_PATH"/shaders/model.frag");
 	}
 	else
 	{
-		shaderProgram=loadShaders("shaders/model.vert","shaders/model.frag");
+		shaderProgram=compileShaders("shaders/model.vert","shaders/model.frag");
 	}
 	test.close();
 	
 	
 	
-	glUseProgram(shaderProgram);
 	loadTextures();
+	
 	initBuffers();
+	linkShaders(shaderProgram);
+	glUseProgram(shaderProgram);
+	
 	initUniformVarLocations();
 	
 	MVP_loc = glGetUniformLocation(shaderProgram, "MVP");
     
 	//Set OpenGL render settings
-    glDisable(GL_CULL_FACE);
+	glDisable(GL_CULL_FACE);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -90,22 +94,22 @@ Viewer::Viewer(string modelPath, string motionPath,string musicPath)
 	motionController=new VMDMotionController(*pmxInfo,*vmdInfo,shaderProgram);
 	
 	
+	initSound(musicPath);
+	
+	string vertPath,fragPath; //vertex/fragment shader file paths
 	ifstream test2("shaders/bulletDebug.vert");
-	GLuint btDebugShaderProgram;
 	if(!test2.is_open())
 	{
-		btDebugShaderProgram=loadShaders(DATA_PATH"/shaders/bulletDebug.vert",DATA_PATH"/shaders/bulletDebug.frag");
+		vertPath=DATA_PATH"/shaders/bulletDebug.vert";
+		fragPath=DATA_PATH"/shaders/bulletDebug.frag";
 	}
 	else
 	{
-		btDebugShaderProgram=loadShaders("shaders/bulletDebug.vert","shaders/bulletDebug.frag");
+		vertPath="shaders/bulletDebug.vert";
+		fragPath="shaders/bulletDebug.frag";
 	}
-	//GLuint btDebugShaderProgram=loadShaders(DATA_PATH"/shaders/bulletDebug.vert",DATA_PATH"/shaders/bulletDebug.frag");
-	
-	initSound(musicPath);
-	
-	bulletPhysics = new BulletPhysics(btDebugShaderProgram);
-	glUseProgram(shaderProgram); //restore GL shader program to Viewer's shader program after initializing BulletPhysic's debugDrawer
+	bulletPhysics = new BulletPhysics(vertPath,fragPath);
+	glUseProgram(shaderProgram); //restore GL shader program binding to Viewer's shader program after initializing BulletPhysic's debugDrawer
 	mmdPhysics = new MMDPhysics(*pmxInfo,motionController,bulletPhysics);
 	
 	motionController->updateVertexMorphs();
@@ -154,22 +158,22 @@ void Viewer::render()
 	
 	if(glfwGetKey('S')==GLFW_PRESS)
 	{
-		bulletPhysics->setDebugMode(btIDebugDraw::DBG_DrawWireframe);
+		bulletPhysics->SetDebugMode(btIDebugDraw::DBG_DrawWireframe);
 		bulletPhysics->DebugDrawWorld();
 	}
 	else if(glfwGetKey('D')==GLFW_PRESS)
 	{
-		bulletPhysics->setDebugMode(btIDebugDraw::DBG_DrawAabb);
+		bulletPhysics->SetDebugMode(btIDebugDraw::DBG_DrawAabb);
 		bulletPhysics->DebugDrawWorld();
 	}
 	else if(glfwGetKey('F')==GLFW_PRESS)
 	{
-		bulletPhysics->setDebugMode(btIDebugDraw::DBG_DrawConstraints);
+		bulletPhysics->SetDebugMode(btIDebugDraw::DBG_DrawConstraints);
 		bulletPhysics->DebugDrawWorld();
 	}
 	else if(glfwGetKey('G')==GLFW_PRESS)
 	{
-		bulletPhysics->setDebugMode(btIDebugDraw::DBG_DrawConstraintLimits);
+		bulletPhysics->SetDebugMode(btIDebugDraw::DBG_DrawConstraintLimits);
 		bulletPhysics->DebugDrawWorld();
 	}
 	glUseProgram(shaderProgram); //Restore shader program and buffer's to Viewer's after drawing Bullet debug
@@ -177,8 +181,6 @@ void Viewer::render()
 	glBindBuffer(GL_ARRAY_BUFFER, Buffers[VertexArrayBuffer]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, Buffers[VertexIndexBuffer]);
 	
-	//drawIKMarkers();
-
 	//glFinish();
 	//glDrawBuffer(RecordBuffer,Buffers);
 	//glReadPixels(0,0,1920,1080,GL_RGB,
@@ -303,78 +305,6 @@ void Viewer::drawModel(bool drawEdges)
 	}
 }
 
-void Viewer::drawIKMarkers()
-{
-	glBindVertexArray(VAOs[IKDebugVertices]);
-	glBindBuffer(GL_ARRAY_BUFFER, Buffers[IKVertexArrayBuffer]);
-	
-	
-	vector<int> targetBoneIndices;
-	
-	for(int i=0; i<pmxInfo->bone_continuing_datasets; ++i)
-	{
-		PMXBone *b=pmxInfo->bones[i];
-	
-		glm::mat4 tmpMatrix=b->calculateGlobalMatrix();
-		IKVertexData[i].position.x=tmpMatrix[3][0];
-		IKVertexData[i].position.y=tmpMatrix[3][1];
-		IKVertexData[i].position.z=tmpMatrix[3][2];
-		IKVertexData[i].position.w=tmpMatrix[3][3];
-		
-		//IKVertexData[i].position.x=b->Global[3][0];
-		//IKVertexData[i].position.y=b->Global[3][1];
-		//IKVertexData[i].position.z=b->Global[3][2];
-		//IKVertexData[i].position.w=b->Global[3][3];
-
-		IKVertexData[i].UV.x=0;
-		IKVertexData[i].UV.y=0;
-		
-		if(b->IK)
-		{
-			targetBoneIndices.push_back(b->IKTargetBoneIndex);
-			
-			IKVertexData[i].normal.x=1;
-			IKVertexData[i].normal.y=0;
-			IKVertexData[i].normal.z=0;
-		}
-		else
-		{
-			IKVertexData[i].normal.x=0;
-			IKVertexData[i].normal.y=0;
-			IKVertexData[i].normal.z=0;
-		}
-
-		IKVertexData[i].weightFormula=4;
-
-		IKVertexData[i].boneIndex1=0;
-		IKVertexData[i].boneIndex2=0;
-		IKVertexData[i].boneIndex3=0;
-		IKVertexData[i].boneIndex4=0;
-
-		IKVertexData[i].weight1=0;
-		IKVertexData[i].weight2=0;
-		IKVertexData[i].weight3=0;
-		IKVertexData[i].weight4=0;
-		
-	}
-	
-	for(int i=0; i<targetBoneIndices.size(); ++i)
-	{
-		IKVertexData[ targetBoneIndices[i] ].normal.x=0;
-		IKVertexData[ targetBoneIndices[i] ].normal.y=1;
-		IKVertexData[ targetBoneIndices[i] ].normal.z=0;
-	}
-	
-	glBufferData(GL_ARRAY_BUFFER, pmxInfo->bone_continuing_datasets*sizeof(VertexData), IKVertexData, GL_DYNAMIC_DRAW);
-	
-	GLuint Bones_loc=glGetUniformLocation(shaderProgram,"Bones");
-	glm::mat4 tmpSkinMatrix[pmxInfo->bone_continuing_datasets];
-	
-	glUniformMatrix4fv(Bones_loc, pmxInfo->bone_continuing_datasets, GL_FALSE, (const GLfloat*)&tmpSkinMatrix);
-	
-	glDrawArrays(GL_POINTS, 0, pmxInfo->bone_continuing_datasets);
-}
-
 
 //#define MODELDUMP
 void Viewer::initBuffers()
@@ -447,32 +377,6 @@ void Viewer::initBuffers()
 	
 	glVertexAttribPointer(vWeightFormula, 1, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*9));
 	glBindAttribLocation(shaderProgram, vWeightFormula, "vWeightFormula");
-	glEnableVertexAttribArray(vWeightFormula);	
-	
-	
-	//Initialize IK Debug buffers
-	IKVertexData = (VertexData*)malloc(pmxInfo->bone_continuing_datasets*sizeof(VertexData));
-
-	glBindVertexArray(VAOs[IKDebugVertices]);
-	
-	glBindBuffer(GL_ARRAY_BUFFER, Buffers[IKVertexArrayBuffer]);
-	
-	glVertexAttribPointer(vPosition, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(0)); //4=number of components updated per vertex
-	glEnableVertexAttribArray(vPosition);
-	
-	glVertexAttribPointer(vUV, 2, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*4));
-	glEnableVertexAttribArray(vUV);
-	
-	glVertexAttribPointer(vNormal, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*6));
-	glEnableVertexAttribArray(vNormal);
-	
-	glVertexAttribPointer(vBoneIndices, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*10));
-	glEnableVertexAttribArray(vBoneIndices);
-	
-	glVertexAttribPointer(vBoneWeights, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*14));
-	glEnableVertexAttribArray(vBoneWeights);
-	
-	glVertexAttribPointer(vWeightFormula, 1, GL_FLOAT, GL_FALSE, sizeof(VertexData), BUFFER_OFFSET(sizeof(GLfloat)*9));
 	glEnableVertexAttribArray(vWeightFormula);
 }
 
@@ -697,42 +601,85 @@ void Viewer::loadTextures()
 	//FreeImage_DeInitialise();
 }
 
+void hackShaderFile(string filename,int GLVersionMajor,int GLVersionMinor)
+{
+	/*ifstream shaderFile(filename);
+	
+	string line;
+	getline(shaderFile,line);*/
+	
+}
+
+void Viewer::hackShaderFiles()
+{	
+	/*if(GLVersionMajor==3 && GLVersionMinor==0)
+	{
+		cout<<"Going to hack shader files for OpenGL 3.0 (assuming GLSL version 130)"<<endl;
+		
+		
+		string vertPath,fragPath; //vertex/fragment shader file paths
+		ifstream test2("shaders/bulletDebug.vert");
+		if(!test2.is_open())
+		{
+			vertPath=DATA_PATH"/shaders/bulletDebug.vert";
+			fragPath=DATA_PATH"/shaders/bulletDebug.frag";
+		}
+		else
+		{
+			vertPath="shaders/bulletDebug.vert";
+			fragPath="shaders/bulletDebug.frag";
+		}
+		hackShaderFile(vertPath);
+		
+	}*/
+}
 
 void Viewer::initGLFW()
 {
 	if (!glfwInit()) exit(EXIT_FAILURE);
 	
+	//glfwOpenWindow variables, feel free to modify if glfwOpenWindow() fails
+	static const int SCREEN_WIDTH=1920,SCREEN_HEIGHT=1080;
+	static const int redBits=0,greenBits=0,blueBits=0,alphaBits=0,depthBits=32,stencilBits=0;
+	
+	
+	//First, try to start in OpenGL 2.1 mode
+	GLVersionHintMajor=3,GLVersionHintMinor=2;
 	glfwOpenWindowHint(GLFW_FSAA_SAMPLES, 2); //2x antialiasing
 	glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 2); //OpenGL version
 	glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 1);
 	//glfwOpenWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_FALSE);
 	//glfwOpenWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); //Don't want old OpenGL
 	
- 
+	cout<<"Attempting to open GLFW window (OpenGL "<<GLVersionHintMajor<<"."<<GLVersionHintMinor<<")...";
 	//Open a window and create its OpenGL context
-	if( !glfwOpenWindow( 1920, 1080, 0,0,0,0, 32,0, GLFW_WINDOW ) )
+	if( !glfwOpenWindow( SCREEN_WIDTH, SCREEN_HEIGHT, redBits,greenBits,blueBits,alphaBits, depthBits,stencilBits, GLFW_WINDOW ) )
 	{
 		cout<<"Failed to open GLFW window"<<endl;
-		cout<<"Going to attempt to open GLFW window without any OpenGL version hints"<<endl;
 		
-		glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 0);
-		glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 0);
-		glfwOpenWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_FALSE);
+		GLVersionHintMajor=3,GLVersionHintMinor=0;
+		
+		glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, GLVersionHintMajor);
+		glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, GLVersionHintMinor);
+		glfwOpenWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 		glfwOpenWindowHint(GLFW_OPENGL_PROFILE, 0);
 		
-		if( !glfwOpenWindow( 1920, 1080, 0,0,0,0, 32,0, GLFW_WINDOW ) )
+		cout<<"Attempting to open GLFW window (OpenGL "<<GLVersionHintMajor<<"."<<GLVersionHintMinor<<")...";
+		if( !glfwOpenWindow( SCREEN_WIDTH, SCREEN_HEIGHT, redBits,greenBits,blueBits,alphaBits, depthBits,stencilBits, GLFW_WINDOW ) )
 		{
 			cout<<"FATAL ERROR: Failed to open GLFW window"<<endl;
 			glfwTerminate();
 			exit(EXIT_FAILURE);
 		}
-		else
-		{
-			cout<<"glfwOpenWindow() successful"<<endl;
-		}
 	}
+	cout<<"done"<<endl;
 	
+	glfwGetGLVersion(&GLVersionMajor, &GLVersionMinor, &GLVersionRevision);
+	cout<<"(GLFW) OpenGL version recieved: "<<GLVersionMajor<<"."<<GLVersionMinor<<" (Revision "<<GLVersionRevision<<")"<<endl;
 	cout<<"OpenGL version info: "<<glGetString(GL_VERSION)<<endl;
+	cout<<"GLSL version info: "<<glGetString(GL_SHADING_LANGUAGE_VERSION)<<endl<<endl;
+	
+	//hackShaderFiles();
 
 	// Initialize GLEW
 	glewExperimental=true; //Needed in core profile
